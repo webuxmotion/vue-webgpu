@@ -1,3 +1,4 @@
+import { Material } from "./Material";
 import shader from "./shaders.wgsl";
 import { TriangleMesh } from "./TriangleMesh";
 import { mat4 } from "gl-matrix";
@@ -13,6 +14,7 @@ export class Renderer {
   pipeline!: GPURenderPipeline;
 
   triangleMesh!: TriangleMesh;
+  material!: Material;
   module!: GPUShaderModule;
   t!: number;
 
@@ -23,7 +25,7 @@ export class Renderer {
 
   async Initialize() {
     await this.setupDevice();
-    this.createAssets();
+    await this.createAssets();
     await this.makePipeline();
     this.render();
   }
@@ -47,25 +49,47 @@ export class Renderer {
   async makePipeline() {
     this.uniformBuffer = this.device.createBuffer({
       size: 64 * 3,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
     const bindGroupLayout = this.device.createBindGroupLayout({
-      entries: [{
-        binding: 0,
-        visibility: GPUShaderStage.VERTEX,
-        buffer: {}
-      }],
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.VERTEX,
+          buffer: {},
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: {},
+        },
+        {
+          binding: 2,
+          visibility: GPUShaderStage.FRAGMENT,
+          sampler: {},
+        },
+      ],
     });
 
     this.bindGroup = this.device.createBindGroup({
       layout: bindGroupLayout,
-      entries: [{
-        binding: 0,
-        resource: {
-          buffer: this.uniformBuffer
-        }
-      }],
+      entries: [
+        {
+          binding: 0,
+          resource: {
+            buffer: this.uniformBuffer,
+          },
+        },
+        {
+          binding: 1,
+          resource: this.material.view,
+        },
+        {
+          binding: 2,
+          resource: this.material.sampler,
+        },
+      ],
     });
 
     const pipelineLayout = this.device.createPipelineLayout({
@@ -97,8 +121,10 @@ export class Renderer {
     });
   }
 
-  createAssets() {
+  async createAssets() {
     this.triangleMesh = new TriangleMesh(this.device);
+    this.material = new Material();
+    await this.material.initialize(this.device, "/avatar.png");
   }
 
   render = () => {
@@ -109,7 +135,7 @@ export class Renderer {
     }
 
     const projection = mat4.create();
-    mat4.perspective(projection, Math.PI / 4, 800/600, 0.1, 10);
+    mat4.perspective(projection, Math.PI / 4, 800 / 600, 0.1, 10);
 
     const view = mat4.create();
     mat4.lookAt(view, [-2, 0, 2], [0, 0, 0], [0, 0, 1]);
@@ -117,9 +143,21 @@ export class Renderer {
     const model = mat4.create();
     mat4.rotate(model, model, this.t, [0, 0, 1]);
 
-    this.device.queue.writeBuffer(this.uniformBuffer, 0, new Float32Array(model));
-    this.device.queue.writeBuffer(this.uniformBuffer, 64, new Float32Array(view));
-    this.device.queue.writeBuffer(this.uniformBuffer, 128, new Float32Array(projection));
+    this.device.queue.writeBuffer(
+      this.uniformBuffer,
+      0,
+      new Float32Array(model),
+    );
+    this.device.queue.writeBuffer(
+      this.uniformBuffer,
+      64,
+      new Float32Array(view),
+    );
+    this.device.queue.writeBuffer(
+      this.uniformBuffer,
+      128,
+      new Float32Array(projection),
+    );
 
     const commandEncoder: GPUCommandEncoder =
       this.device.createCommandEncoder();
@@ -145,5 +183,5 @@ export class Renderer {
     this.device.queue.submit([commandEncoder.finish()]);
 
     requestAnimationFrame(this.render);
-  }
+  };
 }
