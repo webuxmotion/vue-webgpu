@@ -6,13 +6,11 @@ export class TriangleMesh {
     constructor(device: GPUDevice) {
 
         // x y z u v
-        const vertices: Float32Array = new Float32Array(
-            [
-                0.0,  0.0,  0.5, 0.5, 0.0,
-                0.0, -0.5, -0.5, 0.0, 1.0,
-                0.0,  0.5, -0.5, 1.0, 1.0
-            ]
-        );
+        const vertices: Float32Array = new Float32Array([
+            0.0,  0.0,  0.5,  0.5, 0.0,
+            0.0, -0.5, -0.25, 0.0, 1.0,
+            0.0,  0.5, -0.25, 1.0, 1.0,
+        ]);
 
         const usage: GPUBufferUsageFlags = GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST;
         //VERTEX: the buffer can be used as a vertex buffer
