@@ -21,7 +21,7 @@ fn Deg2Rad(deg: f32) -> f32 {
     return deg * PI / 180.0;
 }
 
-@compute @workgroup_size(64)
+@compute @workgroup_size(256)
 fn cs_main(@builtin(global_invocation_id) id: vec3<u32>) {
     let i = id.x;
     

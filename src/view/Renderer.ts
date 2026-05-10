@@ -1,5 +1,4 @@
 import { Camera } from "../model/camera";
-import { Triangle } from "../model/triangle";
 import { Material } from "./Material";
 import shader from "./shaders/shaders.wgsl";
 import computeShader from "./shaders/compute.wgsl";
@@ -15,8 +14,8 @@ export class Renderer {
   context!: GPUCanvasContext;
   format!: GPUTextureFormat;
 
-  objectBuffer!: GPUBuffer; // storage buffer — всі матриці
-  cameraBuffer!: GPUBuffer; // uniform — view + projection
+  objectBuffer!: GPUBuffer; 
+  cameraBuffer!: GPUBuffer; 
 
   bindGroup!: GPUBindGroup;
   pipeline!: GPURenderPipeline;
@@ -25,12 +24,11 @@ export class Renderer {
   material!: Material;
   module!: GPUShaderModule;
 
-  // reusable CPU buffer — не створювати кожен кадр
-  modelData!: Float32Array;
+  // Текстура глибини для відсікання невидимих об'єктів
+  depthTexture!: GPUTexture;
 
-  // додаткові буфери
-  simBuffer!: GPUBuffer; // position, amplitude, frequency per object
-  deltaBuffer!: GPUBuffer; // delta time
+  simBuffer!: GPUBuffer; 
+  deltaBuffer!: GPUBuffer; 
   computePipeline!: GPUComputePipeline;
   computeBindGroup!: GPUBindGroup;
 
@@ -51,51 +49,44 @@ export class Renderer {
     this.context = this.canvas.getContext("webgpu") as GPUCanvasContext;
     this.format = navigator.gpu.getPreferredCanvasFormat();
     this.module = this.device.createShaderModule({ code: shader });
+    
     this.context.configure({
       device: this.device,
       format: this.format,
       alphaMode: "opaque",
     });
+
+    // Створюємо текстуру глибини під розмір канвасу
+    this.reconfigureDepthTexture();
+  }
+
+  reconfigureDepthTexture() {
+    if (this.depthTexture) this.depthTexture.destroy();
+    
+    this.depthTexture = this.device.createTexture({
+      size: [this.canvas.width, this.canvas.height],
+      format: 'depth24plus',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
   }
 
   async makePipeline() {
-    // storage buffer — 16 floats per mat4, no alignment requirement
     this.objectBuffer = this.device.createBuffer({
-      size: MAX_TRIANGLES * 64, // 16 floats × 4 bytes = 64 bytes per object
+      size: MAX_TRIANGLES * 64,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
 
-    // camera buffer — view + projection
     this.cameraBuffer = this.device.createBuffer({
       size: 128,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    // pre-allocate CPU buffer once
-    this.modelData = new Float32Array(MAX_TRIANGLES * 16);
-
     const bindGroupLayout = this.device.createBindGroupLayout({
       entries: [
-        {
-          binding: 0,
-          visibility: GPUShaderStage.VERTEX,
-          buffer: { type: "read-only-storage" },
-        },
-        {
-          binding: 1,
-          visibility: GPUShaderStage.VERTEX,
-          buffer: { type: "uniform" },
-        },
-        {
-          binding: 2,
-          visibility: GPUShaderStage.FRAGMENT,
-          texture: {},
-        },
-        {
-          binding: 3,
-          visibility: GPUShaderStage.FRAGMENT,
-          sampler: {},
-        },
+        { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       ],
     });
 
@@ -114,6 +105,7 @@ export class Renderer {
     });
 
     this.pipeline = this.device.createRenderPipeline({
+      layout: pipelineLayout,
       vertex: {
         module: this.module,
         entryPoint: "vs_main",
@@ -125,18 +117,21 @@ export class Renderer {
         targets: [{ format: this.format }],
       },
       primitive: { topology: "triangle-list" },
-      layout: pipelineLayout,
+      // АКТИВАЦІЯ DEPTH TEST
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
     });
   }
 
- async makeComputePipeline(simData: Float32Array) {
-    // 1. Створюємо буфер точно під розмір готового масиву
+  async makeComputePipeline(simData: Float32Array) {
     this.simBuffer = this.device.createBuffer({
       size: simData.byteLength,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     
-    // 2. Копіюємо дані одним махом (це надшвидко)
     this.device.queue.writeBuffer(this.simBuffer, 0, simData);
 
     this.deltaBuffer = this.device.createBuffer({
@@ -167,7 +162,7 @@ export class Renderer {
       layout: this.device.createPipelineLayout({ bindGroupLayouts: [computeBindGroupLayout] }),
       compute: { module: computeModule, entryPoint: "cs_main" },
     });
-}
+  }
 
   async createAssets() {
     this.triangleMesh = new TriangleMesh(this.device);
@@ -175,12 +170,17 @@ export class Renderer {
     await this.material.initialize(this.device, "/avatar.png");
   }
 
-  // Оновлений метод render тепер приймає КІЛЬКІСТЬ, а не масив об'єктів
   async render(camera: Camera, triangleCount: number, delta: number) {
     if (!this.deltaBuffer || !this.computePipeline) return;
 
-    // Оновлюємо deltaTime один раз за кадр
     this.device.queue.writeBuffer(this.deltaBuffer, 0, new Float32Array([delta]));
+
+    const view = camera.get_view();
+    const projection = mat4.create();
+    mat4.perspective(projection, Math.PI / 4, this.canvas.width / this.canvas.height, 0.1, 100);
+
+    this.device.queue.writeBuffer(this.cameraBuffer, 0, view as Float32Array);
+    this.device.queue.writeBuffer(this.cameraBuffer, 64, projection as Float32Array);
 
     const commandEncoder = this.device.createCommandEncoder();
 
@@ -188,17 +188,8 @@ export class Renderer {
     const computePass = commandEncoder.beginComputePass();
     computePass.setPipeline(this.computePipeline);
     computePass.setBindGroup(0, this.computeBindGroup);
-    // Розрахунок робочих груп (64 — це workgroup_size у шейдері)
-    computePass.dispatchWorkgroups(Math.ceil(triangleCount / 64));
+    computePass.dispatchWorkgroups(Math.ceil(triangleCount / 256));
     computePass.end();
-
-    // CAMERA DATA
-    const view = camera.get_view();
-    const projection = mat4.create();
-    mat4.perspective(projection, Math.PI / 4, this.canvas.width / this.canvas.height, 0.1, 100);
-
-    this.device.queue.writeBuffer(this.cameraBuffer, 0, view as Float32Array);
-    this.device.queue.writeBuffer(this.cameraBuffer, 64, projection as Float32Array);
 
     // RENDER PASS
     const textureView = this.context.getCurrentTexture().createView();
@@ -209,12 +200,18 @@ export class Renderer {
         loadOp: "clear",
         storeOp: "store",
       }],
+      // ПІДКЛЮЧЕННЯ DEPTH BUFFER ДО РЕНДЕРУ
+      depthStencilAttachment: {
+        view: this.depthTexture.createView(),
+        depthClearValue: 1.0,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
+      },
     });
 
     renderpass.setPipeline(this.pipeline);
     renderpass.setBindGroup(0, this.bindGroup);
     renderpass.setVertexBuffer(0, this.triangleMesh.buffer);
-    // Малюємо всі екземпляри за один виклик
     renderpass.draw(3, triangleCount, 0, 0);
     renderpass.end();
 

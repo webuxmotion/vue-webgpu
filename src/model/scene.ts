@@ -7,7 +7,7 @@ export class Scene {
 
   constructor() {
     // 1. Ініціалізація камери
-    this.player = new Camera([0, 0, 0.5], 0, 0);
+    this.player = new Camera([0, -1, 0.5], 0, 0);
 
     // 2. Створюємо один великий масив замість мільйона об'єктів
     // 8 чисел на об'єкт: x, y, z, amplitude, frequency, time, angle, pad
@@ -19,7 +19,7 @@ export class Scene {
       const frequency = 0.5 + Math.random() * 1.0;
       
       // Розподіляємо трикутники у просторі (наприклад, сіткою або випадково)
-      const x = 4.0;
+      const x = 8 + (Math.random() - 0.5) * 8
       const y = (Math.random() - 0.5) * 5.6;
       const z = (Math.random() - 0.5) * 3.0;
 
