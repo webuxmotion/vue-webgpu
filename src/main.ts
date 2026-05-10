@@ -1,5 +1,6 @@
 import "./style.css";
 import shader from "./shaders.wgsl";
+import { TriangleMesh } from "./triangle_mesh";
 
 const Initialize = async () => {
   if (!navigator.gpu) throw new Error("WebGPU not supported");
@@ -12,6 +13,8 @@ const Initialize = async () => {
 
   context.configure({ device, format, alphaMode: "opaque" });
 
+  const triangleMesh = new TriangleMesh(device);
+
   const pipeline: GPURenderPipeline = device.createRenderPipeline({
     layout: "auto",
     vertex: {
@@ -19,6 +22,7 @@ const Initialize = async () => {
         code: shader,
       }),
       entryPoint: "vs_main",
+      buffers: [triangleMesh.bufferLayout]
     },
     fragment: {
       module: device.createShaderModule({
@@ -43,6 +47,7 @@ const Initialize = async () => {
     ],
   });
   renderPass.setPipeline(pipeline);
+  renderPass.setVertexBuffer(0, triangleMesh.buffer);
   renderPass.draw(3, 1, 0, 0);
   renderPass.end();
 
