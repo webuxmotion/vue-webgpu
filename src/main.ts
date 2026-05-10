@@ -3,16 +3,11 @@ import shader from "./shaders.wgsl";
 
 const Initialize = async () => {
   if (!navigator.gpu) throw new Error("WebGPU not supported");
-
   const canvas = document.getElementById("gfx-main") as HTMLCanvasElement;
-
   const adapter = await navigator.gpu.requestAdapter();
   if (!adapter) throw new Error("No GPUAdapter found");
-
   const device: GPUDevice = await adapter.requestDevice();
-
   const context = canvas.getContext("webgpu") as GPUCanvasContext;
-
   const format: GPUTextureFormat = navigator.gpu.getPreferredCanvasFormat();
 
   context.configure({ device, format, alphaMode: "opaque" });
@@ -30,15 +25,9 @@ const Initialize = async () => {
         code: shader,
       }),
       entryPoint: "fs_main",
-      targets: [
-        {
-          format: format,
-        },
-      ],
+      targets: [{ format: format }],
     },
-    primitive: {
-      topology: "triangle-list",
-    },
+    primitive: { topology: "triangle-list" },
   });
 
   const commandEncoder: GPUCommandEncoder = device.createCommandEncoder();
